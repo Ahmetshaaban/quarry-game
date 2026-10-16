@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QUARRY - a turn-based strategy game for humans and agents</title>
+<style>
+  :root {
+    --bg: #10151c;
+    --panel: #172029;
+    --panel-2: #1d2833;
+    --line: #2a3744;
+    --text: #e8eef4;
+    --muted: #93a3b3;
+    --accent: #5cc8a1;
+    --accent-dim: #2f6d59;
+    --ruby: #e0555f;
+    --amber: #e2a13c;
+    --jade: #4fb07a;
+    --azure: #4a8fd4;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
+  body {
+    font-family: "Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); }
+  h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 20px 18px 60px; }
+  header.top { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+  header.top h1 { font-size: 26px; letter-spacing: 0.14em; }
+  header.top .tag { color: var(--muted); font-size: 13px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .hidden { display: none !important; }
+  button, select, input {
+    font: inherit; color: var(--text); background: var(--panel-2);
+    border: 1px solid var(--line); border-radius: 9px; padding: 9px 13px;
+  }
+  button { cursor: pointer; transition: background 120ms ease, border-color 120ms ease, transform 80ms ease; }
+  button:hover:not(:disabled) { background: #26333f; border-color: #3b4c5d; }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #08130f; font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: #6fd6b0; border-color: #6fd6b0; }
+  button.ghost { background: transparent; }
+  button.small { padding: 5px 9px; font-size: 13px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  /* grid and flex children default to min-width:auto, which lets a long code line
+     stretch a whole column and push the layout off a phone screen */
+  .home-grid > *, .game-grid > *, .quarries > *, .stack > *, aside > * { min-width: 0; }
+  pre.snippet, table.board, .log { min-width: 0; max-width: 100%; }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+  .code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; letter-spacing: 0.16em; }
+
+  /* home */
+  .home-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 18px; }
+  @media (max-width: 820px) { .home-grid { grid-template-columns: 1fr; } }
+  .rules { color: var(--muted); font-size: 13.5px; }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  .stack { display: flex; flex-direction: column; gap: 14px; }
+  .hr { height: 1px; background: var(--line); margin: 4px 0; }
+
+  /* board */
+  .game-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+  @media (max-width: 900px) { .game-grid { grid-template-columns: 1fr; } }
+  .quarries { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  @media (max-width: 560px) { .quarries { grid-template-columns: 1fr; } }
+  .quarry {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 13px;
+    position: relative; overflow: hidden;
+  }
+  .quarry .stripe { position: absolute; inset: 0 0 auto 0; height: 3px; }
+  .quarry.pickable { cursor: pointer; }
+  .quarry.pickable:hover { border-color: #46596b; }
+  .quarry.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-dim) inset; }
+  .quarry.picked { border-color: var(--accent); }
+  .quarry .qhead { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+  .quarry .qhead h3 { font-size: 15px; }
+  .quarry .qhead .left { margin-left: auto; color: var(--muted); font-size: 12.5px; }
+  .stones { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+  .stone { width: 14px; height: 14px; border-radius: 3px; background: #33424f; }
+  .stone.on { background: var(--qc, #7d8b98); }
+  .seatline { display: flex; align-items: center; gap: 7px; font-size: 13px; padding: 2px 0; }
+  .seatline .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .seatline .num { font-variant-numeric: tabular-nums; color: var(--muted); }
+  .chip { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .qscore { margin-top: 8px; font-size: 12.5px; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 7px; }
+
+  .banner { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  .banner .who { font-weight: 600; }
+  .banner.you { border-left: 3px solid var(--accent); padding-left: 11px; }
+  .timer { height: 5px; background: #24313d; border-radius: 3px; overflow: hidden; margin-top: 10px; }
+  .timer > i { display: block; height: 100%; background: var(--accent); transition: width 400ms linear; }
+  .actions { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .actionbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .pill { border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font-size: 12.5px; color: var(--muted); }
+
+  table.board { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  table.board th, table.board td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  table.board th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+  table.board tr.turn td { background: #182836; }
+  table.board td.num { font-variant-numeric: tabular-nums; text-align: right; }
+
+  .log { margin-top: 12px; max-height: 190px; overflow-y: auto; font-size: 13px; }
+  .log ol { margin: 0; padding-left: 20px; color: var(--muted); }
+  .log li { padding: 2px 0; }
+  .log li.you { color: var(--text); }
+  .log li .auto { color: #c58b3c; font-size: 12px; }
+  .share { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+  .share code { background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; padding: 5px 8px; font-size: 12.5px; }
+  pre.snippet { background: #0d1218; border: 1px solid var(--line); border-radius: 9px; padding: 10px; font-size: 12px; overflow-x: auto; color: #b9c8d6; }
+  .seatcard { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2); }
+  .seatcard .role { font-size: 12px; color: var(--muted); }
+  .seatcard.empty { border-style: dashed; color: var(--muted); }
+  .toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+    background: #2a3a49; border: 1px solid #3d5063; padding: 10px 16px; border-radius: 10px; font-size: 13.5px; }
+
+  /* result + replay */
+  .overlay { position: fixed; inset: 0; background: rgba(8, 12, 17, 0.86); display: flex; align-items: flex-start;
+    justify-content: center; padding: 28px 14px; overflow-y: auto; }
+  .overlay .panel { max-width: 720px; width: 100%; }
+  .overlay h2 { font-size: 21px; margin-bottom: 4px; }
+  .replaybar { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+  footer { margin-top: 26px; color: var(--muted); font-size: 12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>QUARRY</h1>
+    <span class="tag">four quarries &middot; two to four players &middot; humans and agents in the same match</span>
+  </header>
+
+  <!-- ---------------------------------------------------------------- home -->
+  <section id="view-home" class="hidden">
+    <div class="home-grid">
+      <div class="panel stack">
+        <div>
+          <h2>Take stones. Deny leads. Win the match.</h2>
+          <p class="rules" style="margin-top:10px">
+            Four quarries (Ruby, Amber, Jade, Azure) start with nine stones each. On your turn take one or two
+            stones from a single quarry, or spend your once-per-match Double Shift to take one stone from each of two
+            different quarries. Play runs until every quarry is empty. A quarry pays only a strict leader: you score
+            your stones minus the runner-up's, and a tie for the lead scores nothing for anybody. Taking the last
+            stone of a quarry earns a Seal worth two points. Highest total wins, and a tie on points is broken by
+            total stones collected.
+          </p>
+        </div>
+        <div class="hr"></div>
+        <div class="row">
+          <div class="field" style="min-width:180px">
+            <label for="player-name">Your name</label>
+            <input id="player-name" maxlength="24" placeholder="Guest" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="difficulty">Bot strength</label>
+            <select id="difficulty">
+              <option value="easy">Easy</option>
+              <option value="medium" selected>Medium</option>
+              <option value="hard">Hard</option>
+              <option value="brutal">Brutal</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="opponents">Bot opponents</label>
+            <select id="opponents">
+              <option value="1">1</option>
+              <option value="2" selected>2</option>
+              <option value="3">3</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <button id="btn-quick" class="primary">Play a quick match</button>
+          <button id="btn-create" class="ghost">Create a room for friends and agents</button>
+        </div>
+        <div class="hr"></div>
+        <div class="row">
+          <div class="field" style="min-width:160px">
+            <label for="join-code">Room code</label>
+            <input id="join-code" class="code" maxlength="5" placeholder="AB12C" autocomplete="off" style="text-transform:uppercase">
+          </div>
+          <button id="btn-join">Join that room</button>
+          <a class="small" href="/api-docs" style="margin-left:auto">Agent API documentation</a>
+        </div>
+        <p class="small muted" id="home-error" style="margin:0"></p>
+      </div>
+
+      <div class="panel stack">
+        <h3>How a match plays out</h3>
+        <p class="small muted" style="margin:0">
+          A quick match seats you against bots and starts immediately. A room gives you a five-character code; share
+          the link and up to four seats can be filled by people, by bots, or by agents driving the JSON API. The
+          board refreshes itself, and every seat that runs out of time is played for automatically, so a match always
+          finishes.
+        </p>
+        <div class="hr"></div>
+        <h3>Agents welcome</h3>
+        <p class="small muted" style="margin:0">
+          The whole game is exposed over HTTP/JSON: read the state, pick one of the legal moves, post it. A sample
+          bot ships in the repository, and the API documentation lists every endpoint with copyable examples.
+        </p>
+        <div class="hr"></div>
+        <p class="small muted" style="margin:0">
+          Fair-play note: a quarry only pays a strict leader, so hoarding one colour invites rivals to sink it into a
+          tie, and the Double Shift is strong but you only get it once. There is no move that wins on its own.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- --------------------------------------------------------------- lobby -->
+  <section id="view-lobby" class="hidden">
+    <div class="game-grid">
+      <div class="panel stack">
+        <div class="row">
+          <h2>Lobby</h2>
+          <span class="pill code" id="lobby-code"></span>
+          <button class="small ghost" id="btn-copy">Copy invite link</button>
+        </div>
+        <div class="stack" id="lobby-seats"></div>
+        <div class="row">
+          <button id="btn-add-bot" class="ghost">Add a bot</button>
+          <button id="btn-start" class="primary">Start the match</button>
+        </div>
+        <p class="small muted" id="lobby-hint" style="margin:0"></p>
+      </div>
+      <div class="panel stack">
+        <h3>Play from an agent</h3>
+        <p class="small muted" style="margin:0">Seat an agent in this room with two calls, then let it play the match through the same API.</p>
+        <pre class="snippet" id="lobby-snippet"></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------------------------------------------------------------- game -->
+  <section id="view-game" class="hidden">
+    <div class="game-grid">
+      <div>
+        <div class="panel" style="margin-bottom:12px">
+          <div class="banner" id="banner"></div>
+          <div class="timer"><i id="timer-bar" style="width:0%"></i></div>
+          <div class="actions">
+            <div class="actionbar" id="actionbar"></div>
+            <div class="small muted" id="hint"></div>
+          </div>
+        </div>
+        <div class="quarries" id="quarries"></div>
+      </div>
+      <aside class="panel stack">
+        <div>
+          <h3>Live score</h3>
+          <p class="small muted" style="margin:2px 0 8px">Standings as they would be if every quarry were empty now.</p>
+          <table class="board" id="scoreboard"></table>
+        </div>
+        <div>
+          <h3>Move log</h3>
+          <div class="log" id="log"><ol id="log-list"></ol></div>
+        </div>
+        <div>
+          <h3>This room</h3>
+          <div class="share">
+            <code class="code" id="room-code"></code>
+            <button class="small ghost" id="btn-copy-room">Copy invite link</button>
+          </div>
+          <p class="small muted" style="margin:8px 0 0">Agents join this exact room with:</p>
+          <pre class="snippet" id="game-snippet"></pre>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <footer>
+    QUARRY &middot; a small turn-based strategy game for humans and agents &middot; state lives on the server, refresh-safe
+  </footer>
+</div>
+
+<div id="overlay" class="overlay hidden"></div>
+<div id="toast" class="toast hidden"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var QUARRY_META = {
+    ruby:  { label: 'Ruby',  colour: '#e0555f' },
+    amber: { label: 'Amber', colour: '#e2a13c' },
+    jade:  { label: 'Jade',  colour: '#4fb07a' },
+    azure: { label: 'Azure', colour: '#4a8fd4' }
+  };
+  var SEAT_COLOURS = ['#87b6e8', '#f0a3a8', '#9fd8a8', '#e8ce8a'];
+
+  var session = { code: null, token: null, name: '' };
+  var latest = null;         // last state from the server
+  var selection = { mode: 'take', quarry: null, count: 1, picks: [] };
+  var poller = null;
+  var busy = false;
+  var lastError = '';
+  var replay = null;         // { steps: [], index: 0, timer: null }
+
+  var $ = function (id) { return document.getElementById(id); };
+  var show = function (id) {
+    ['view-home', 'view-lobby', 'view-game'].forEach(function (v) {
+      $(v).classList.toggle('hidden', v !== id);
+    });
+  };
+  var esc = function (value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  };
+  var toast = function (message, ms) {
+    var el = $('toast');
+    el.textContent = message;
+    el.classList.remove('hidden');
+    clearTimeout(el._t);
+    el._t = setTimeout(function () { el.classList.add('hidden'); }, ms || 2600);
+  };
+
+  function api(path, options) {
+    options = options || {};
+    return fetch(path, {
+      method: options.method || 'GET',
+      headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
+      body: options.body ? JSON.stringify(options.body) : undefined
+    }).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (data) {
+        if (!response.ok || data.ok === false) {
+          var error = new Error(data.message || ('HTTP ' + response.status));
+          error.code = data.error;
+          throw error;
+        }
+        return data;
+      });
+    });
+  }
+
+  function setPath(path) {
+    // Cosmetic only: some origins (file, embedded webviews) refuse path rewrites, and a
+    // refusal must never break the game flow.
+    try { history.replaceState(null, '', path); } catch (e) { /* ignore */ }
+  }
+
+  function nameOrGuest() {
+    var typed = ($('player-name').value || '').trim();
+    session.name = typed.slice(0, 24) || 'Guest';
+    try { localStorage.setItem('quarry.name', session.name); } catch (e) {}
+    return session.name;
+  }
+
+  function remember(code, token) {
+    session.code = code;
+    session.token = token;
+    try {
+      localStorage.setItem('quarry.token.' + code, token);
+      localStorage.setItem('quarry.last', code);
+    } catch (e) {}
+  }
+
+  function storedToken(code) {
+    try { return localStorage.getItem('quarry.token.' + code); } catch (e) { return null; }
+  }
+
+  // ------------------------------------------------------------ home actions
+
+  $('btn-quick').addEventListener('click', function () {
+    if (busy) return;
+    busy = true;
+    $('home-error').textContent = '';
+    api('/api/rooms', {
+      method: 'POST',
+      body: {
+        name: nameOrGuest(),
+        difficulty: $('difficulty').value,
+        bots: Number($('opponents').value),
+        autostart: true
+      }
+    }).then(function (data) {
+      remember(data.code, data.token);
+      setPath('/r/' + data.code);
+      latest = data.state;
+      render();
+    }).catch(function (err) {
+      $('home-error').textContent = err.message;
+    }).then(function () { busy = false; });
+  });
+
+  $('btn-create').addEventListener('click', function () {
+    if (busy) return;
+    busy = true;
+    api('/api/rooms', { method: 'POST', body: { name: nameOrGuest() } })
+      .then(function (data) {
+        remember(data.code, data.token);
+        setPath('/r/' + data.code);
+        latest = data.state;
+        render();
+      })
+      .catch(function (err) { $('home-error').textContent = err.message; })
+      .then(function () { busy = false; });
+  });
+
+  $('btn-join').addEventListener('click', function () {
+    var code = ($('join-code').value || '').trim().toUpperCase();
+    if (code.length < 4) { $('home-error').textContent = 'Enter the five-character room code.'; return; }
+    if (busy) return;
+    busy = true;
+    api('/api/rooms/' + encodeURIComponent(code) + '/join', { method: 'POST', body: { name: nameOrGuest() } })
+      .then(function (data) {
+        remember(data.code, data.token);
+        setPath('/r/' + data.code);
+        latest = data.state;
+        render();
+      })
+      .catch(function (err) { $('home-error').textContent = err.message; })
+      .then(function () { busy = false; });
+  });
+
+  $('btn-add-bot').addEventListener('click', function () {
+    withRoom(function () {
+      return api('/api/rooms/' + session.code + '/bot', { method: 'POST', body: { difficulty: $('difficulty').value } });
+    });
+  });
+
+  $('btn-start').addEventListener('click', function () {
+    withRoom(function () {
+      return api('/api/rooms/' + session.code + '/start', { method: 'POST', body: { token: session.token } });
+    });
+  });
+
+  function copyInvite(button) {
+    var link = location.origin + '/r/' + (session.code || '');
+    var done = function () { toast('Invite link copied: ' + link); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(link).then(done, function () { toast(link); });
+    } else {
+      toast(link);
+    }
+  }
+  $('btn-copy').addEventListener('click', copyInvite);
+  $('btn-copy-room').addEventListener('click', copyInvite);
+
+  function withRoom(call) {
+    if (busy) return;
+    busy = true;
+    call().then(function (data) {
+      if (data.state) latest = data.state;
+      render();
+    }).catch(function (err) { toast(err.message); })
+      .then(function () { busy = false; });
+  }
+
+  // -------------------------------------------------------------- game moves
+
+  function playMove(moveId) {
+    if (busy) return;
+    busy = true;
+    api('/api/rooms/' + session.code + '/move', { method: 'POST', body: { token: session.token, id: moveId } })
+      .then(function (data) {
+        latest = data.state;
+        selection = { mode: 'take', quarry: null, count: 1, picks: [] };
+        render();
+      })
+      .catch(function (err) { toast(err.message); })
+      .then(function () { busy = false; });
+  }
+
+  function submitSelection() {
+    if (!latest || !latest.you || !latest.you.isYourTurn) return;
+    if (selection.mode === 'shift') {
+      if (selection.picks.length !== 2) { toast('Pick two different quarries for the Double Shift.'); return; }
+      playMove('shift:' + selection.picks.slice().sort().join('+'));
+      return;
+    }
+    if (!selection.quarry) { toast('Pick a quarry first.'); return; }
+    var target = latest.quarries.filter(function (q) { return q.id === selection.quarry; })[0];
+    if (!target || target.left <= 0) { toast('That quarry is empty.'); return; }
+    var count = Math.min(selection.count, target.left);
+    playMove('take:' + selection.quarry + ':' + count);
+  }
+
+  // -------------------------------------------------------------- rendering
+
+  function render() {
+    var state = latest;
+    if (!state) { show('view-home'); return; }
+    if (state.phase === 'lobby') { renderLobby(state); show('view-lobby'); return; }
+    renderGame(state);
+    show('view-game');
+    if (state.phase === 'finished' && !$('overlay').dataset.open) openResult(state);
+  }
+
+  function renderLobby(state) {
+    $('lobby-code').textContent = state.code;
+    var seats = state.seats.map(function (seat) {
+      return '<div class="seatcard"><span class="chip" style="background:' + SEAT_COLOURS[seat.seat] + '"></span>' +
+        '<strong>' + esc(seat.name) + '</strong><span class="role">' +
+        (seat.type === 'bot' ? ('bot, ' + esc(seat.difficulty || 'medium')) : 'human') +
+        (seat.seat === 0 ? ', host' : '') + '</span></div>';
+    });
+    for (var i = state.seats.length; i < 4; i += 1) {
+      seats.push('<div class="seatcard empty">open seat ' + (i + 1) + '</div>');
+    }
+    $('lobby-seats').innerHTML = seats.join('');
+    var mine = state.seats.filter(function (s) { return s.seat === 0; }).length;
+    $('lobby-hint').textContent = state.seats.length < 2
+      ? 'Fill at least one more seat (invite a friend, seat an agent, or add a bot), then start.'
+      : 'Ready. Start when everyone is in.';
+    $('lobby-snippet').textContent =
+      'curl -sX POST ' + location.origin + '/api/rooms/' + state.code + '/join \\\n' +
+      '  -H "Content-Type: application/json" -d \'{"name":"Agent One"}\'\n\n' +
+      '# open the match by posting moves, or seat a server bot:\n' +
+      'curl -sX POST ' + location.origin + '/api/rooms/' + state.code + '/bot';
+    $('btn-start').disabled = state.seats.length < 2 || !state.seats[0] || !session.token;
+  }
+
+  function renderGame(state) {
+    if ($('overlay').dataset.open === 'replay') return;
+    $('room-code').textContent = state.code;
+    $('game-snippet').textContent =
+      'curl -s ' + location.origin + '/api/rooms/' + state.code + '/state?token=YOUR_TOKEN';
+    var turnSeat = state.turn ? state.turn.seat : -1;
+    var yourTurn = state.phase === 'active' && state.turn && state.turn.seat === sessionSeat(state);
+
+    $('banner').className = 'banner' + (yourTurn ? ' you' : '');
+    $('banner').innerHTML = state.phase === 'finished'
+      ? '<span class="who">Match over</span><span class="muted">see the result panel</span>'
+      : (yourTurn
+        ? '<span class="who">Your turn</span><span class="muted">' + state.turn.secondsLeft + 's left</span>'
+        : '<span class="who">' + esc(seatName(state, turnSeat)) + ' is thinking</span><span class="muted">' + state.turn.secondsLeft + 's left</span>');
+    var pct = state.turn ? Math.max(0, Math.min(100, (state.turn.secondsLeft / state.turn.turnSeconds) * 100)) : 0;
+    $('timer-bar').style.width = pct + '%';
+
+    renderBoard($('quarries'), state, {
+      clickable: yourTurn && state.phase === 'active',
+      onPick: function (id) {
+        if (selection.mode === 'shift') {
+          var index = selection.picks.indexOf(id);
+          if (index >= 0) selection.picks.splice(index, 1);
+          else if (selection.picks.length < 2) selection.picks.push(id);
+          else selection.picks = [selection.picks[1], id];
+        } else {
+          selection.quarry = id;
+          var q = state.quarries.filter(function (x) { return x.id === id; })[0];
+          if (selection.count > q.left) selection.count = Math.max(1, q.left);
+        }
+        render();
+      }
+    });
+
+    renderActions(state, yourTurn);
+    renderScoreboard(state);
+    renderLog(state);
+  }
+
+  function sessionSeat(state) {
+    if (!state.you) return -1;
+    return state.you.seat;
+  }
+
+  function seatName(state, index) {
+    var seat = state.seats.filter(function (s) { return s.seat === index; })[0];
+    if (!seat) return 'seat ' + index;
+    return seat.name + (seat.type === 'bot' ? ' (bot)' : '');
+  }
+
+  function renderBoard(container, state, options) {
+    var disabled = !options.clickable;
+    var html = state.quarries.map(function (q) {
+      var meta = QUARRY_META[q.id] || { label: q.id, colour: '#7d8b98' };
+      var picked = selection.mode === 'shift'
+        ? selection.picks.indexOf(q.id) >= 0
+        : selection.quarry === q.id;
+      var stones = '';
+      for (var i = 0; i < q.total; i += 1) {
+        stones += '<span class="stone' + (i < q.left ? ' on' : '') + '" style="--qc:' + meta.colour + '"></span>';
+      }
+      var lines = state.seats.map(function (seat) {
+        var held = state.holdings[seat.seat] ? state.holdings[seat.seat][q.id] : 0;
+        return '<div class="seatline"><span class="chip" style="background:' + SEAT_COLOURS[seat.seat] + '"></span>' +
+          '<span class="name">' + esc(seat.name) + '</span><span class="num">' + held + '</span></div>';
+      }).join('');
+      var pq = (state.livePerQuarry || []).filter(function (x) { return x.quarry === q.id; })[0] || {};
+      var scoreLine = q.left === 0
+        ? (pq.leader == null ? 'Empty. Nobody leads, so it pays nothing.' : 'Empty. ' + esc(seatName(state, pq.leader)) + ' scores ' + pq.points + '.')
+        : (pq.leader == null
+          ? 'Nobody leads yet: a tie pays nobody. Last stone earns a Seal (+2).'
+          : esc(seatName(state, pq.leader)) + ' leads and would score ' + pq.points + '.');
+      return '<div class="quarry' + (disabled ? '' : ' pickable') + (picked ? ' picked' : '') + '" data-id="' + q.id + '">' +
+        '<span class="stripe" style="background:' + meta.colour + '"></span>' +
+        '<div class="qhead"><h3>' + meta.label + '</h3><span class="left">' + q.left + ' left</span></div>' +
+        '<div class="stones">' + stones + '</div>' + lines +
+        '<div class="qscore">' + scoreLine + '</div></div>';
+    }).join('');
+    container.innerHTML = html;
+    if (!disabled) {
+      Array.prototype.forEach.call(container.querySelectorAll('.quarry'), function (node) {
+        node.addEventListener('click', function () { options.onPick(node.dataset.id); });
+      });
+    }
+  }
+
+  function renderActions(state, yourTurn) {
+    var bar = $('actionbar');
+    if (state.phase === 'finished') {
+      bar.innerHTML = '<button class="primary" id="btn-result">See the final result</button>';
+      $('hint').textContent = '';
+      $('btn-result').addEventListener('click', function () { openResult(state); });
+      return;
+    }
+    if (!yourTurn) {
+      bar.innerHTML = '<span class="pill">' + (state.you && state.you.seat >= 0 ? 'You are seat ' + (state.you.seat + 1) : 'Watching') + '</span>' +
+        '<span class="pill">' + (state.you && state.you.shiftAvailable ? 'Double Shift ready' : 'Double Shift spent') + '</span>';
+      $('hint').textContent = 'The board updates on its own. Every seat that runs out of time is played automatically.';
+      return;
+    }
+    var buttons = '';
+    var takeMax = (state.rules && state.rules.takeMax) || 2;
+    if (selection.mode === 'take') {
+      var target = state.quarries.filter(function (q) { return q.id === selection.quarry; })[0];
+      for (var count = 1; count <= takeMax; count += 1) {
+        var ok = target && target.left >= count;
+        buttons += '<button class="' + (selection.count === count ? 'primary' : '') + '" data-count="' + count + '"' +
+          (ok ? '' : ' disabled') + '>take ' + count + '</button>';
+      }
+      buttons += '<button class="primary" data-role="confirm"' + (target ? '' : ' disabled') + '>Confirm</button>';
+      buttons += '<button class="ghost small" data-role="shift"' + (state.you.shiftAvailable ? '' : ' disabled') + '>Double Shift</button>';
+    } else {
+      buttons += '<span class="pill">Double Shift: ' + selection.picks.length + '/2 quarries picked</span>' +
+        '<button class="primary" data-role="confirm">Play Double Shift</button>' +
+        '<button class="ghost small" data-role="cancel">Back</button>';
+    }
+    bar.innerHTML = buttons;
+    if (selection.mode === 'take') {
+      $('hint').textContent = selection.quarry
+        ? 'Choose how many stones to take, then confirm. Keys 1 and 2 set the amount, Enter plays it.'
+        : 'Pick a quarry on the board. Keys 1 and 2 set the amount, Enter plays it.';
+    } else {
+      $('hint').textContent = 'Pick two different quarries for your one Double Shift, then play it.';
+    }
+    Array.prototype.forEach.call(bar.querySelectorAll('button'), function (node) {
+      node.addEventListener('click', function () {
+        if (node.dataset.role === 'shift') { selection = { mode: 'shift', quarry: null, count: 1, picks: [] }; render(); return; }
+        if (node.dataset.role === 'cancel') { selection = { mode: 'take', quarry: selection.quarry, count: 1, picks: [] }; render(); return; }
+        if (node.dataset.role === 'confirm') { submitSelection(); return; }
+        if (node.dataset.count) { selection.count = Number(node.dataset.count); render(); }
+      });
+    });
+  }
+
+  function renderScoreboard(state) {
+    var rows = state.seats.map(function (seat) {
+      return '<tr class="' + (state.turn && state.turn.seat === seat.seat ? 'turn' : '') + '">' +
+        '<td><span class="chip" style="background:' + SEAT_COLOURS[seat.seat] + ';display:inline-block;margin-right:6px"></span>' +
+        esc(seat.name) + (seat.type === 'bot' ? ' <span class="muted small">bot</span>' : '') + '</td>' +
+        '<td class="num">' + state.liveScores[seat.seat] + '</td>' +
+        '<td class="num">' + (state.seals[seat.seat] || []).length + '</td></tr>';
+    }).join('');
+    $('scoreboard').innerHTML = '<thead><tr><th>Seat</th><th style="text-align:right">Points</th><th style="text-align:right">Seals</th></tr></thead><tbody>' + rows + '</tbody>';
+  }
+
+  function renderLog(state) {
+    var list = state.moves.map(function (move) {
+      var parts = move.taken.map(function (t) { return t.count + ' from ' + (QUARRY_META[t.quarry] || {}).label + (t.emptied ? ' (sealed)' : ''); }).join(' + ');
+      return '<li class="' + (move.seat === sessionSeat(state) ? 'you' : '') + '">' + move.n + '. ' + esc(seatName(state, move.seat)) + ': ' + parts +
+        (move.action === 'shift' ? ' <span class="muted">double shift</span>' : '') + (move.auto ? ' <span class="auto">timed out</span>' : '') + '</li>';
+    }).join('');
+    $('log-list').innerHTML = list;
+    var box = $('log');
+    box.scrollTop = box.scrollHeight;
+  }
+
+  // ----------------------------------------------------------- result + replay
+
+  function openResult(state) {
+    var record = latest;
+    var result = state.result;
+    if (!result) return;
+    var rows = state.seats.map(function (seat, index) {
+      return '<tr><td><span class="chip" style="background:' + SEAT_COLOURS[seat.seat] + ';display:inline-block;margin-right:6px"></span>' +
+        esc(seat.name) + (seat.type === 'bot' ? ' <span class="muted small">bot</span>' : '') + '</td>' +
+        '<td class="num">' + result.scores[index] + '</td>' +
+        '<td class="num">' + result.stones[index] + '</td>' +
+        '<td class="num">' + result.seals[index] + '</td></tr>';
+    }).join('');
+    var title = result.winner == null
+      ? 'Draw: ' + esc(result.tieBreak)
+      : esc(seatName(state, result.winner)) + ' wins with ' + result.scores[result.winner] + ' points';
+    $('overlay').dataset.open = 'result';
+    $('overlay').classList.remove('hidden');
+    $('overlay').innerHTML = '<div class="panel stack">' +
+      '<div><h2>' + title + '</h2><p class="small muted" style="margin:4px 0 0">' +
+      result.turns + ' moves in ' + result.durationSeconds + 's. ' + esc(result.tieBreak) + '.</p></div>' +
+      '<table class="board"><thead><tr><th>Seat</th><th style="text-align:right">Points</th><th style="text-align:right">Stones</th><th style="text-align:right">Seals</th></tr></thead><tbody>' +
+      rows + '</tbody></table>' +
+      '<div class="row">' +
+      '<button class="primary" id="btn-again">Play another match</button>' +
+      '<button id="btn-replay">Step through the replay</button>' +
+      '<button class="ghost" id="btn-close">Close</button>' +
+      '</div></div>';
+    $('btn-close').addEventListener('click', closeOverlay);
+    $('btn-again').addEventListener('click', function () {
+      closeOverlay();
+      session.code = null; session.token = null; latest = null;
+      show('view-home');
+    });
+    $('btn-replay').addEventListener('click', function () { startReplay(record); });
+  }
+
+  function startReplay(record) {
+    replay = { record: record, index: 0, timer: null };
+    $('overlay').dataset.open = 'replay';
+    $('overlay').classList.remove('hidden');
+    $('overlay').innerHTML = '<div class="panel stack">' +
+      '<div><h2>Replay</h2><p class="small muted" style="margin:4px 0 0">Every move of room ' + esc(record.code) + ', one step at a time.</p></div>' +
+      '<div id="replay-board"></div>' +
+      '<div class="replaybar">' +
+      '<button class="small" id="rv-first">First</button>' +
+      '<button class="small" id="rv-prev">Previous</button>' +
+      '<button class="small primary" id="rv-play">Play</button>' +
+      '<button class="small" id="rv-next">Next</button>' +
+      '<button class="small" id="rv-last">Last</button>' +
+      '<span class="pill" id="rv-label"></span>' +
+      '<button class="small ghost" id="rv-close" style="margin-left:auto">Close</button>' +
+      '</div></div>';
+    $('rv-first').addEventListener('click', function () { replay.index = 0; paintReplay(); });
+    $('rv-prev').addEventListener('click', function () { replay.index = Math.max(0, replay.index - 1); paintReplay(); });
+    $('rv-next').addEventListener('click', function () { replay.index = Math.min(record.moves.length, replay.index + 1); paintReplay(); });
+    $('rv-last').addEventListener('click', function () { replay.index = record.moves.length; paintReplay(); });
+    $('rv-play').addEventListener('click', toggleReplayPlayback);
+    $('rv-close').addEventListener('click', function () {
+      if (replay && replay.timer) clearInterval(replay.timer);
+      replay = null;
+      closeOverlay();
+    });
+    paintReplay();
+  }
+
+  function toggleReplayPlayback() {
+    if (!replay) return;
+    if (replay.timer) {
+      clearInterval(replay.timer);
+      replay.timer = null;
+      $('rv-play').textContent = 'Play';
+      return;
+    }
+    $('rv-play').textContent = 'Pause';
+    replay.timer = setInterval(function () {
+      if (!replay) return;
+      if (replay.index >= replay.record.moves.length) {
+        clearInterval(replay.timer); replay.timer = null; $('rv-play').textContent = 'Play';
+        return;
+      }
+      replay.index += 1;
+      paintReplay();
+    }, 1100);
+  }
+
+  function stateAt(record, moveCount) {
+    var state = {
+      phase: moveCount >= record.moves.length && record.result ? 'finished' : 'active',
+      code: record.code,
+      seats: record.seats,
+      quarries: record.quarries.map(function (q) {
+        return { id: q.id, total: q.total, left: q.left };
+      }),
+      holdings: record.seats.map(function () { return {}; }),
+      seals: record.seats.map(function () { return []; }),
+      liveScores: record.seats.map(function () { return 0; }),
+      livePerQuarry: []
+    };
+    record.seats.forEach(function (seat, index) {
+      Object.keys(QUARRY_META).forEach(function (qid) { state.holdings[index][qid] = 0; });
+    });
+    for (var i = 0; i < moveCount; i += 1) {
+      var move = record.moves[i];
+      move.taken.forEach(function (t) {
+        state.holdings[move.seat][t.quarry] += t.count;
+        var q = state.quarries.filter(function (x) { return x.id === t.quarry; })[0];
+        q.left -= t.count;
+        if (q.left === 0 && state.seals[move.seat].indexOf(t.quarry) < 0) state.seals[move.seat].push(t.quarry);
+      });
+    }
+    // live scoring for the replayed position
+    var totals = record.seats.map(function () { return 0; });
+    state.quarries.forEach(function (q) {
+      var held = record.seats.map(function (_, index) { return state.holdings[index][q.id] || 0; });
+      var best = Math.max.apply(null, [0].concat(held));
+      var leaders = [];
+      held.forEach(function (n, index) { if (n === best && best > 0) leaders.push(index); });
+      var points = 0;
+      if (leaders.length === 1) {
+        var others = held.filter(function (_, index) { return index !== leaders[0]; });
+        points = best - Math.max.apply(null, [0].concat(others));
+        totals[leaders[0]] += points;
+      }
+      state.livePerQuarry.push({ quarry: q.id, held: held, leader: leaders.length === 1 ? leaders[0] : null, points: points });
+    });
+    state.seals.forEach(function (list, index) {
+      totals[index] += list.length * 2;
+      state.seals[index] = list.slice();
+    });
+    state.liveScores = totals;
+    state.turn = null;
+    state.you = null;
+    return state;
+  }
+
+  function paintReplay() {
+    if (!replay) return;
+    var record = replay.record;
+    var state = stateAt(record, replay.index);
+    selection = { mode: 'take', quarry: null, count: 1, picks: [] };
+    renderBoard($('replay-board'), state, { clickable: false, onPick: function () {} });
+    var lastMove = replay.index > 0 ? record.moves[replay.index - 1] : null;
+    $('rv-label').textContent = 'step ' + replay.index + ' / ' + record.moves.length +
+      (lastMove ? ': ' + seatName(record, lastMove.seat) + ' ' + lastMove.taken.map(function (t) {
+        return t.count + ' from ' + (QUARRY_META[t.quarry] || {}).label;
+      }).join(' + ') : '');
+  }
+
+  function closeOverlay() {
+    $('overlay').classList.add('hidden');
+    delete $('overlay').dataset.open;
+    $('overlay').innerHTML = '';
+  }
+
+  // ---------------------------------------------------------------- polling
+
+  function poll() {
+    if (!session.code || !latest || latest.phase === 'finished' || replay) return;
+    var url = '/api/rooms/' + session.code + '/state' + (session.token ? '?token=' + session.token : '');
+    api(url).then(function (data) {
+      if (!data.state) return;
+      latest = data.state;
+      render();
+    }).catch(function (err) {
+      if (err.code === 'ROOM_NOT_FOUND' && lastError !== err.message) {
+        lastError = err.message;
+        toast('This room is no longer on the server. Start a new match.');
+      }
+    });
+  }
+
+  document.addEventListener('keydown', function (event) {
+    if (event.target && /INPUT|SELECT|TEXTAREA/.test(event.target.tagName)) return;
+    if (!latest || !latest.you || !latest.you.isYourTurn) return;
+    var takeMax = (latest.rules && latest.rules.takeMax) || 2;
+    if (/^[1-9]$/.test(event.key) && Number(event.key) <= takeMax) {
+      selection.count = Number(event.key);
+      render();
+    } else if (event.key === 'Enter') {
+      submitSelection();
+    } else if (event.key.toLowerCase() === 's' && latest.you.shiftAvailable) {
+      selection = { mode: selection.mode === 'shift' ? 'take' : 'shift', quarry: selection.quarry, count: 1, picks: [] };
+      render();
+    }
+  });
+
+  // ------------------------------------------------------------------ boot
+
+  (function boot() {
+    try {
+      var saved = localStorage.getItem('quarry.name');
+      if (saved) $('player-name').value = saved;
+    } catch (e) {}
+    var path = location.pathname.match(/^\/r\/([A-Za-z0-9]{4,8})$/);
+    var query = new URLSearchParams(location.search).get('room');
+    var code = (path ? path[1] : (query || '')).toUpperCase();
+    if (!code) {
+      try {
+        var last = localStorage.getItem('quarry.last');
+        if (last) $('join-code').value = last;
+      } catch (e) {}
+      show('view-home');
+      poller = setInterval(poll, 1200);
+      return;
+    }
+    var token = storedToken(code);
+    session.code = code;
+    session.token = token;
+    api('/api/rooms/' + code + '/state' + (token ? '?token=' + token : ''))
+      .then(function (data) {
+        latest = data.state;
+        render();
+      })
+      .catch(function (err) {
+        $('join-code').value = code;
+        $('home-error').textContent = err.message;
+        show('view-home');
+      });
+    poller = setInterval(poll, 1200);
+  })();
+})();
+</script>
+</body>
+</html>

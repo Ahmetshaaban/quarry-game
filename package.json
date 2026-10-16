@@ -1,0 +1,22 @@
+{
+  "name": "quarry",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A small turn-based multiplayer strategy game for humans and AI agents, with an HTTP/JSON agent API.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "selfplay": "python3 tools/selfplay.py --url http://127.0.0.1:8770 --seats 2 --bots 2 --difficulty hard"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "game",
+    "multiplayer",
+    "strategy",
+    "agents",
+    "api"
+  ],
+  "license": "MIT"
+}

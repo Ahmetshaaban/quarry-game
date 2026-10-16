@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QUARRY - agent API</title>
+<style>
+  :root { --bg:#10151c; --panel:#172029; --line:#2a3744; --text:#e8eef4; --muted:#93a3b3; --accent:#5cc8a1; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:"Inter","Segoe UI",system-ui,Arial,sans-serif; font-size:15px; line-height:1.6; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 26px 18px 70px; }
+  h1 { font-size: 25px; letter-spacing: 0.14em; margin: 0 0 4px; }
+  h2 { font-size: 17px; margin: 26px 0 8px; }
+  h3 { font-size: 15px; margin: 18px 0 6px; }
+  p, li { color: #cfdae4; }
+  code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 13px; background: #0d1218; padding: 2px 5px; border-radius: 5px; }
+  pre { background:#0d1218; border:1px solid var(--line); border-radius:10px; padding:12px; overflow-x:auto; font-size:12.5px; color:#b9c8d6; }
+  table { width:100%; border-collapse: collapse; font-size:14px; margin-top:8px; }
+  th, td { text-align:left; padding:7px 9px; border-bottom:1px solid var(--line); vertical-align: top; }
+  th { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:0.06em; }
+  a { color: var(--accent); }
+  .muted { color: var(--muted); font-size: 13.5px; }
+  .pill { border:1px solid var(--line); border-radius:999px; padding:2px 9px; font-size:12px; color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>QUARRY</h1>
+  <p class="muted">Agent API. Everything the browser client does is available over plain HTTP with JSON bodies; no key, no
+  login, no SDK. Base URL is the same origin that serves the game.</p>
+
+  <h2>Rules in one paragraph</h2>
+  <p>Four quarries (Ruby, Amber, Jade, Azure) start with nine stones each. On your turn you take one or two stones
+  from a single quarry, or spend your once-per-match Double Shift to take one stone from each of two different
+  quarries. Play continues until every quarry is empty. Each quarry pays only a strict leader: that player scores
+  their stones in the quarry minus the runner-up's, and a tie for the lead pays nobody. Taking the last stone of a
+  quarry earns that player a Seal, worth two points. Highest total wins, and a tie on points is broken by total
+  stones collected.</p>
+
+  <h2>Endpoints</h2>
+  <table>
+    <thead><tr><th>Method and path</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET /api/health</code></td><td>Liveness plus a copy of the rules.</td></tr>
+      <tr><td><code>POST /api/rooms</code></td><td>Create a room. Body: <code>{"name":"...","bots":2,"difficulty":"medium","autostart":true}</code>. Returns <code>code</code>, <code>seat</code>, <code>token</code>.</td></tr>
+      <tr><td><code>POST /api/rooms/{code}/join</code></td><td>Take the next empty seat. Body: <code>{"name":"..."}</code>. Returns your <code>seat</code> and <code>token</code>.</td></tr>
+      <tr><td><code>POST /api/rooms/{code}/bot</code></td><td>Seat a server bot in the next empty seat while the room is in the lobby. Body: <code>{"difficulty":"hard"}</code>.</td></tr>
+      <tr><td><code>POST /api/rooms/{code}/start</code></td><td>Start the match (host only). Body: <code>{"token":"..."}</code>. Needs at least two occupied seats.</td></tr>
+      <tr><td><code>GET /api/rooms/{code}/state?token=...</code></td><td>Full public state. With your token the same object also carries <code>you</code> with <code>you.legalMoves</code>, <code>you.isYourTurn</code> and <code>you.holdings</code>.</td></tr>
+      <tr><td><code>POST /api/rooms/{code}/move</code></td><td>Play a move. Body: <code>{"token":"...","id":"take:ruby:2"}</code>, or the explicit form <code>{"token":"...","action":"take","quarry":"ruby","count":2}</code>.</td></tr>
+      <tr><td><code>GET /api/rooms/{code}/log</code></td><td>The complete match record: seats, every move, holdings, and the final result.</td></tr>
+    </tbody>
+  </table>
+  <p class="muted">Every response is JSON. Successful calls carry <code>"ok": true</code>; failures carry
+  <code>"ok": false</code> with an <code>error</code> code (<code>NOT_YOUR_TURN</code>, <code>ILLEGAL_MOVE</code>,
+  <code>BAD_TOKEN</code>, <code>ROOM_FULL</code>, <code>NOT_ENOUGH_SEATS</code>, <code>MATCH_FINISHED</code>, ...) and a
+  human-readable <code>message</code>. CORS is open, so an agent can play from anywhere.</p>
+
+  <h2>Move identifiers</h2>
+  <p>Read <code>you.legalMoves</code> and post one of the returned <code>id</code> values verbatim - that is the whole
+  decision surface, about eighteen options a turn:</p>
+  <pre>{
+  "id": "take:ruby:2",
+  "action": "take",
+  "quarry": "ruby",
+  "count": 2,
+  "description": "Take 2 stones from the Ruby quarry."
+}
+
+{
+  "id": "shift:amber+jade",
+  "action": "shift",
+  "from": [{"quarry": "amber", "count": 1}, {"quarry": "jade", "count": 1}],
+  "description": "Double Shift: ..."
+}</pre>
+
+  <h2>A full agent match in five calls</h2>
+  <pre>BASE=https://your-quarry-host
+
+# 1. open a room and keep the token
+curl -sX POST $BASE/api/rooms -H "Content-Type: application/json" \
+  -d '{"name":"Agent One"}'
+
+# 2. seat three bots so the room is playable on its own
+curl -sX POST $BASE/api/rooms/CODE/bot -H "Content-Type: application/json" -d '{"difficulty":"medium"}'
+curl -sX POST $BASE/api/rooms/CODE/bot -H "Content-Type: application/json" -d '{"difficulty":"medium"}'
+curl -sX POST $BASE/api/rooms/CODE/bot -H "Content-Type: application/json" -d '{"difficulty":"medium"}'
+
+# 3. start the match (host seat only)
+curl -sX POST $BASE/api/rooms/CODE/start -H "Content-Type: application/json" -d '{"token":"TOKEN"}'
+
+# 4. poll until it is your turn, then read the legal moves
+curl -s "$BASE/api/rooms/CODE/state?token=TOKEN"
+
+# 5. play one legal move
+curl -sX POST $BASE/api/rooms/CODE/move -H "Content-Type: application/json" \
+  -d '{"token":"TOKEN","id":"take:ruby:2"}'
+
+# the finished match, move by move
+curl -s $BASE/api/rooms/CODE/log</pre>
+  <p class="muted">A ready-made player lives in the repository at <code>sample-bot/agent_bot.py</code> (standard library
+  only). Point it at a room with <code>--code</code>, or let it open and finish its own match against bots.</p>
+
+  <h2>Notes for agent authors</h2>
+  <ul>
+    <li>Send a <code>User-Agent</code> header that names your agent. Some CDNs and proxies refuse anonymous
+      default user agents, and an identified client never trips those rules.</li>
+    <li>The state is fully public: no hidden information, so a planner can search the game tree directly. Branching is
+      about fourteen moves a turn and a match lasts roughly twenty turns.</li>
+    <li>Seats that run out of time are played automatically, so a match always terminates even if a client stops
+      polling.</li>
+    <li>A room is kept for twenty-four hours after the last move; finished matches are written to disk and remain
+      readable through <code>/api/rooms/{code}/log</code>.</li>
+    <li>Reconnecting is just the same <code>token</code> again; it survives page reloads, server bots and agent
+      restarts inside that window.</li>
+  </ul>
+
+  <p class="muted"><a href="/">Back to the game</a></p>
+</div>
+</body>
+</html>
